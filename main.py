@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, Header
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import extract
-from db.db import SessionLocal, engine, Base
+from db.db import get_engine, get_session_local, Base
 from entities.doctor import Doctor
 from entities.appointment import Appointment
 from entities.user import User
@@ -12,68 +12,91 @@ import schemas.appointment as appointment_schema
 import schemas.available_appointment as available_appointment_schema
 from typing import List
 from datetime import datetime, timedelta
+import os
 
-Base.metadata.create_all(bind=engine)
-
-
-def populate_db():
-    db = SessionLocal()
-    try:
-        if db.query(Doctor).count() == 0:
-            doctors_data = [
-                {"name": "Dr. House", "specialtyCode": "CARD"},
-                {"name": "Dr. Strange", "specialtyCode": "NEUR"},
-                {"name": "Dr. Arizona Robbins", "specialtyCode": "PED"},
-                {"name": "Dr. Miranda Bailey", "specialtyCode": "GMED"},
-                {"name": "Dr. Mark Sloan", "specialtyCode": "DER"},
-                {"name": "Dr. Amelia Shepherd", "specialtyCode": "PNEU"},
-                {"name": "Dr. Owen Hunt", "specialtyCode": "ORTH"},
-                {"name": "Dr. Izzie Stevens", "specialtyCode": "ONC"},
-                {"name": "Dr. April Kepner", "specialtyCode": "OBS"},
-                {"name": "Dr. Tae Takemi", "specialtyCode": "PSY"},
-                {"name": "Dr. Daedalus Yumeno", "specialtyCode": "ENDO"},
-            ]
-            doctors = [Doctor(**data) for data in doctors_data]
-            db.add_all(doctors)
-            db.commit()
-
-            for doctor in db.query(Doctor).all():
-                for i in range(5):
-                    start_time = datetime.now() + timedelta(days=i + 1, hours=9 + i)
-                    end_time = start_time + timedelta(hours=1)
-                    appointment = Appointment(
-                        doctor_id=doctor.id,
-                        from_time=start_time,
-                        to_time=end_time,
-                        is_reserved=False,
-                    )
-                    db.add(appointment)
-            db.commit()
-
-    finally:
-        db.close()
-
-
-app = FastAPI()
-
-
-@app.on_event("startup")
-async def startup_event():
-    populate_db()
-
+# Global variables for engine and SessionLocal
+engine = None
+SessionLocal = None
 
 def get_db():
+    global engine, SessionLocal
+    # Initialize database connection if not already done
+    if engine is None or SessionLocal is None:
+        engine = get_engine()
+        SessionLocal = get_session_local()
+        
+        # Only create tables if we're not running tests
+        if "PYTEST_CURRENT_TEST" not in os.environ:
+            Base.metadata.create_all(bind=engine)
+            
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
+def populate_db():
+    global engine, SessionLocal
+    # Initialize database connection if not already done
+    if engine is None or SessionLocal is None:
+        engine = get_engine()
+        SessionLocal = get_session_local()
+        
+        # Only create tables if we're not running tests
+        if "PYTEST_CURRENT_TEST" not in os.environ:
+            Base.metadata.create_all(bind=engine)
+    
+    # Only populate the database if we're not running tests
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        db = SessionLocal()
+        try:
+            if db.query(Doctor).count() == 0:
+                doctors_data = [
+                    {"name": "Dr. House", "specialtyCode": "CARD"},
+                    {"name": "Dr. Strange", "specialtyCode": "NEUR"},
+                    {"name": "Dr. Arizona Robbins", "specialtyCode": "PED"},
+                    {"name": "Dr. Miranda Bailey", "specialtyCode": "GMED"},
+                    {"name": "Dr. Mark Sloan", "specialtyCode": "DER"},
+                    {"name": "Dr. Amelia Shepherd", "specialtyCode": "PNEU"},
+                    {"name": "Dr. Owen Hunt", "specialtyCode": "ORTH"},
+                    {"name": "Dr. Izzie Stevens", "specialtyCode": "ONC"},
+                    {"name": "Dr. April Kepner", "specialtyCode": "OBS"},
+                    {"name": "Dr. Tae Takemi", "specialtyCode": "PSY"},
+                    {"name": "Dr. Daedalus Yumeno", "specialtyCode": "ENDO"},
+                ]
+                doctors = [Doctor(**data) for data in doctors_data]
+                db.add_all(doctors)
+                db.commit()
+
+                for doctor in db.query(Doctor).all():
+                    for i in range(5):
+                        start_time = datetime.now() + timedelta(days=i + 1, hours=9 + i)
+                        end_time = start_time + timedelta(hours=1)
+                        appointment = Appointment(
+                            doctor_id=doctor.id,
+                            from_time=start_time,
+                            to_time=end_time,
+                            is_reserved=False,
+                        )
+                        db.add(appointment)
+                db.commit()
+
+        finally:
+            db.close()
+    else:
+        pass
+
+app = FastAPI()
+
+@app.on_event("startup")
+async def startup_event():
+    # Only populate the database if we're not running tests
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        populate_db()
 
 @app.get("/")
 def read_root():
     return {"Hello": "World"}
-
 
 @app.get("/doctors/", response_model=List[doctor_schema.Doctor])
 def get_doctors(specialtyCode: str = None, db: Session = Depends(get_db)):
@@ -82,7 +105,6 @@ def get_doctors(specialtyCode: str = None, db: Session = Depends(get_db)):
         query = query.filter(Doctor.specialtyCode == specialtyCode)
     doctors = query.all()
     return doctors
-
 
 @app.post("/appointments/book/")
 def book_appointment(
@@ -120,7 +142,6 @@ def book_appointment(
 
     return {"message": "Appointment booked successfully"}
 
-
 @app.get(
     "/appointments/my-appointments/",
     response_model=List[user_appointment_schema.UserAppointment],
@@ -151,7 +172,6 @@ def get_my_appointments(
 
     return appointments
 
-
 @app.get(
     "/appointments/available/", response_model=List[appointment_schema.Appointment]
 )
@@ -169,7 +189,6 @@ def get_available_appointments(
 
     appointments = query.all()
     return appointments
-
 
 @app.get(
     "/appointments/available_by_specialty/",
@@ -202,7 +221,6 @@ def get_available_appointments_by_specialty(
 
     appointments = query.all()
     return appointments
-
 
 @app.delete("/appointments/{appointment_id}")
 def cancel_appointment(
