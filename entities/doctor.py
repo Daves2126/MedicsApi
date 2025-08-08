@@ -5,5 +5,5 @@ class Doctor(Base):
     __tablename__ = 'doctors'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String, nullable=False)
-    specialtyCode = Column(String, nullable=False)
+    name = Column(String(256), nullable=False)
+    specialtyCode = Column(String(256), nullable=False)

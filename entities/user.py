@@ -7,4 +7,4 @@ class User(Base):
     __tablename__ = 'users'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    email = Column(String, nullable=False, unique=True)
+    email = Column(String(256), nullable=False, unique=True)

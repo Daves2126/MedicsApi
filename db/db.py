@@ -18,8 +18,25 @@ def get_engine():
         else:
             # Use the database URL from environment variables
             from dotenv import load_dotenv
+            from sqlalchemy import create_engine, text
+            from urllib.parse import urlparse, urlunparse
+
             load_dotenv()
-            DATABASE_URL = os.getenv("DATABASE_URL")
+            DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://user:password@host/db")
+            
+            # Create database if it does not exist
+            parsed_url = urlparse(DATABASE_URL)
+            db_name = parsed_url.path.lstrip('/')
+            
+            # Connect to the server without specifying a database
+            server_url_parts = parsed_url._asdict()
+            server_url_parts['path'] = ''
+            server_url = urlunparse(tuple(server_url_parts.values()))
+            
+            temp_engine = create_engine(server_url)
+            with temp_engine.connect() as connection:
+                connection.execute(text(f"CREATE DATABASE IF NOT EXISTS {db_name}"))
+                connection.commit()
         
         engine = create_engine(DATABASE_URL, echo=True)
     return engine
